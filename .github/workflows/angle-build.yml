@@ -33,18 +33,6 @@ jobs:
             target_cpu: x64
             sysroot: amd64
             vulkan: true
-          - label: linux-x86
-            runner: ubuntu-latest
-            target_os: linux
-            target_cpu: x86
-            sysroot: i386
-            vulkan: false
-          - label: linux-x86-vulkan
-            runner: ubuntu-latest
-            target_os: linux
-            target_cpu: x86
-            sysroot: i386
-            vulkan: true
           - label: linux-arm64
             runner: ubuntu-latest
             target_os: linux
@@ -62,31 +50,6 @@ jobs:
             target_os: mac
             target_cpu: arm64
             vulkan: false
-          - label: macos-arm64-vulkan
-            runner: macos-14
-            target_os: mac
-            target_cpu: arm64
-            vulkan: true
-          - label: macos-x64
-            runner: macos-15-intel
-            target_os: mac
-            target_cpu: x64
-            vulkan: false
-          - label: macos-x64-vulkan
-            runner: macos-15-intel
-            target_os: mac
-            target_cpu: x64
-            vulkan: true
-          - label: windows-x86
-            runner: windows-latest
-            target_os: win
-            target_cpu: x86
-            vulkan: false
-          - label: windows-x86-vulkan
-            runner: windows-latest
-            target_os: win
-            target_cpu: x86
-            vulkan: true
           - label: windows-x64
             runner: windows-latest
             target_os: win
@@ -107,11 +70,6 @@ jobs:
             target_os: win
             target_cpu: arm64
             vulkan: true
-          - label: ios-arm64
-            runner: macos-14
-            target_os: ios
-            target_cpu: arm64
-            vulkan: false
 
     env:
       DEPOT_TOOLS_WIN_TOOLCHAIN: "0"
@@ -149,17 +107,7 @@ jobs:
           sed -i.bak "s#REVISION_PLACEHOLDER#${REVISION}#g" .gclient
           rm -rf _bad_scm
           gclient sync --no-history --revision ".@${REVISION}" --reset
-      - name: Make static libs distributable
-        shell: bash
-        run: |
-          if [ "${RUNNER_OS}" = "Windows" ]; then
-            git -C angle config core.autocrlf false
-            git -C angle checkout -- .
-          fi
-          git -C angle apply --check --ignore-whitespace --ignore-space-change \
-            "$GITHUB_WORKSPACE/patches/angle-static-libs.patch"
-          git -C angle apply --ignore-whitespace --ignore-space-change \
-            "$GITHUB_WORKSPACE/patches/angle-static-libs.patch"
+
       - name: Patch build repo (Windows arm64 dbghelp)
         shell: bash
         run: |
@@ -194,11 +142,8 @@ jobs:
         run: |
           cd angle
           args='is_debug=false is_component_build=false symbol_level=0 target_cpu="${{ matrix.target_cpu }}" target_os="${{ matrix.target_os }}"'
-          if [ "${TARGET_OS}" = "ios" ]; then
-            args="${args} ios_enable_code_signing=false target_environment=\"device\""
-          fi
           if [ "${RUNNER_OS}" = "macOS" ]; then
-            args="${args} mac_sdk_version=\"14.5\" mac_sdk_min=\"14.0\""
+            args="${args} mac_sdk_version=\"14.5\" mac_sdk_min=\"14.0\" angle_enable_metal=true"
           fi
           if [ "${{ matrix.vulkan }}" = "true" ]; then
             args="${args} angle_enable_vulkan=true angle_enable_vulkan_system_info=true"
@@ -232,11 +177,11 @@ jobs:
           fi
           gn gen out/Release --args="${args}"
 
-      - name: Build shared + static libs
+      - name: Build shared libs
         shell: bash
         run: |
           cd angle
-          autoninja -C out/Release libEGL libGLESv2 libGLESv2_static libEGL_static
+          autoninja -C out/Release libEGL libGLESv2
 
       - name: Package artifacts
         shell: bash
@@ -257,42 +202,17 @@ jobs:
               for f in libEGL libGLESv2; do
                 [ -f "${out_dir}/${f}.so" ] && cp "${out_dir}/${f}.so" "${staging}/"
               done
-              if [ -f "${out_dir}/libGLESv2_static.a" ]; then
-                cp "${out_dir}/libGLESv2_static.a" "${staging}/"
-              elif [ -f "${out_dir}/obj/libGLESv2_static.a" ]; then
-                cp "${out_dir}/obj/libGLESv2_static.a" "${staging}/"
-              fi
               ;;
             macOS)
-              if [ "${TARGET_OS}" = "ios" ]; then
-                for f in libEGL_static libGLESv2_static; do
-                  if [ -f "${out_dir}/${f}.a" ]; then
-                    cp "${out_dir}/${f}.a" "${staging}/"
-                  elif [ -f "${out_dir}/obj/${f}.a" ]; then
-                    cp "${out_dir}/obj/${f}.a" "${staging}/"
-                  fi
-                done
-              else
-                for f in libEGL libGLESv2; do
-                  [ -f "${out_dir}/${f}.dylib" ] && cp "${out_dir}/${f}.dylib" "${staging}/"
-                done
-                if [ -f "${out_dir}/libGLESv2_static.a" ]; then
-                  cp "${out_dir}/libGLESv2_static.a" "${staging}/"
-                elif [ -f "${out_dir}/obj/libGLESv2_static.a" ]; then
-                  cp "${out_dir}/obj/libGLESv2_static.a" "${staging}/"
-                fi
-              fi
+              for f in libEGL libGLESv2; do
+                [ -f "${out_dir}/${f}.dylib" ] && cp "${out_dir}/${f}.dylib" "${staging}/"
+              done
               ;;
             Windows)
               for f in libEGL libGLESv2; do
                 [ -f "${out_dir}/${f}.dll" ] && cp "${out_dir}/${f}.dll" "${staging}/"
                 [ -f "${out_dir}/${f}.lib" ] && cp "${out_dir}/${f}.lib" "${staging}/"
               done
-              if [ -f "${out_dir}/libGLESv2_static.lib" ]; then
-                cp "${out_dir}/libGLESv2_static.lib" "${staging}/"
-              elif [ -f "${out_dir}/obj/libGLESv2_static.lib" ]; then
-                cp "${out_dir}/obj/libGLESv2_static.lib" "${staging}/"
-              fi
               ;;
           esac
           if [ -d "include" ]; then
